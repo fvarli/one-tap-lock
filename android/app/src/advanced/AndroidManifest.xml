@@ -1,8 +1,12 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- ADVANCED flavor only: privacy-minimal accessibility service that enables
          GLOBAL_ACTION_LOCK_SCREEN for the experimental Biometric Lock. This entire
-         declaration is absent from the standard APK. -->
-    <application>
+         declaration is absent from the standard APK. The app name is overridden
+         so it is distinguishable from the standard install. -->
+    <application
+        android:label="One Tap Lock Advanced"
+        tools:replace="android:label">
         <service
             android:name=".LockAccessibilityService"
             android:exported="true"

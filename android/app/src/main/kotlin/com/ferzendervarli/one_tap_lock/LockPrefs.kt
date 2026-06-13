@@ -25,10 +25,14 @@ object LockPrefs {
     private fun prefs(ctx: Context) =
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
-    // Default is the safer-looking Standard (Device Admin) lock; Accessibility
-    // is an opt-in experimental method.
+    // Per-flavor default: the advanced build (accessibility compiled in) defaults
+    // to Biometric/Accessibility; the standard build defaults to Device Admin.
+    private val defaultMethod: String
+        get() = if (AccessibilityLockBridge.isSupported) METHOD_ACCESSIBILITY
+        else METHOD_DEVICE_ADMIN
+
     fun method(ctx: Context): String =
-        prefs(ctx).getString(KEY_METHOD, METHOD_DEVICE_ADMIN) ?: METHOD_DEVICE_ADMIN
+        prefs(ctx).getString(KEY_METHOD, defaultMethod) ?: defaultMethod
 
     fun tapMode(ctx: Context): String =
         prefs(ctx).getString(KEY_TAP, "single") ?: "single"

@@ -126,6 +126,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _intro(),
+                  if (_advancedAvailable) ...[
+                    const SizedBox(height: 14),
+                    _advancedNotice(),
+                  ],
                   const SizedBox(height: 20),
                   _section('Lock method'),
                   _lockMethodSelector(),
@@ -152,6 +156,33 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         'lock the screen — a software replacement for the power button.',
         style: Theme.of(context).textTheme.bodyMedium,
       );
+
+  /// Advanced-flavor notice explaining the biometric trade-off up front.
+  Widget _advancedNotice() {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.errorContainer.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.error.withValues(alpha: 0.6)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, color: theme.colorScheme.error, size: 20),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'Use Advanced only if you want fingerprint/face unlock after '
+              'locking. Google Play Protect may warn because Android treats '
+              'accessibility + overlay as sensitive.',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _section(String title) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
