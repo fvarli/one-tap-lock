@@ -16,8 +16,9 @@ void main() {
       calls.add(call);
       switch (call.method) {
         case 'getSettings':
+          // Native default is Standard (Device Admin) lock.
           return <String, Object>{
-            'lock_method': 'accessibility',
+            'lock_method': 'device_admin',
             'tap_mode': 'single',
             'edge': 'right',
             'size_dp': 46,
@@ -41,29 +42,46 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
-  testWidgets('renders the home screen with default Accessibility method',
+  testWidgets('defaults to Standard Lock with Device Admin status shown',
       (tester) async {
     await tester.pumpWidget(const OneTapLockApp());
     await tester.pumpAndSettle();
 
     expect(find.text('One Tap Lock'), findsOneWidget);
-    expect(find.text('Start floating button'), findsOneWidget);
-    // Default method is Accessibility, so its status tile is shown.
-    expect(find.text('Accessibility service'), findsOneWidget);
-    // Settings were loaded from the native side on startup.
+    expect(find.text('Standard Lock'), findsOneWidget);
+    expect(find.text('Biometric Lock (Experimental)'), findsOneWidget);
+    // Standard is selected by default → Device Admin status tile is shown,
+    // Accessibility status is hidden.
+    expect(find.text('Device admin (lock screen)'), findsOneWidget);
+    expect(find.text('Accessibility service'), findsNothing);
     expect(calls.any((c) => c.method == 'getSettings'), isTrue);
   });
 
-  testWidgets('switching to Device Admin persists the setting',
+  testWidgets('selecting Biometric Lock requires confirmation before switching',
       (tester) async {
     await tester.pumpWidget(const OneTapLockApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Device Admin'));
+    // Tap the experimental option → a warning dialog must appear.
+    await tester.tap(find.text('Biometric Lock (Experimental)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Enable Biometric Lock?'), findsOneWidget);
+
+    // Cancelling must NOT change the method.
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(calls.any((c) => c.method == 'saveSettings'), isFalse);
+
+    // Confirming persists the Accessibility method.
+    await tester.tap(find.text('Biometric Lock (Experimental)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('I understand, continue'));
     await tester.pumpAndSettle();
 
     final saved = calls.where((c) => c.method == 'saveSettings').toList();
     expect(saved, isNotEmpty);
-    expect((saved.last.arguments as Map)['lock_method'], 'device_admin');
+    expect((saved.last.arguments as Map)['lock_method'], 'accessibility');
+    // Now Accessibility status tile is shown instead of Device Admin.
+    expect(find.text('Accessibility service'), findsOneWidget);
   });
 }

@@ -25,8 +25,10 @@ object LockPrefs {
     private fun prefs(ctx: Context) =
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
+    // Default is the safer-looking Standard (Device Admin) lock; Accessibility
+    // is an opt-in experimental method.
     fun method(ctx: Context): String =
-        prefs(ctx).getString(KEY_METHOD, METHOD_ACCESSIBILITY) ?: METHOD_ACCESSIBILITY
+        prefs(ctx).getString(KEY_METHOD, METHOD_DEVICE_ADMIN) ?: METHOD_DEVICE_ADMIN
 
     fun tapMode(ctx: Context): String =
         prefs(ctx).getString(KEY_TAP, "single") ?: "single"

@@ -25,12 +25,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   bool get _ready => _overlayGranted && _lockReady;
 
-  /// Show the Device Admin tile when it is the selected method, or when it is
-  /// needed as a fallback because Accessibility is selected but not enabled.
-  bool get _showAdminTile =>
-      !_settings.usesAccessibility ||
-      (_settings.usesAccessibility && !_accessibilityEnabled);
-
   @override
   void initState() {
     super.initState();
@@ -165,36 +159,79 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SegmentedButton<String>(
-          segments: const [
-            ButtonSegment(
-              value: LockSettings.methodAccessibility,
-              label: Text('Accessibility'),
-              icon: Icon(Icons.accessibility_new),
-            ),
-            ButtonSegment(
-              value: LockSettings.methodDeviceAdmin,
-              label: Text('Device Admin'),
-              icon: Icon(Icons.admin_panel_settings),
-            ),
+        _MethodCard(
+          title: 'Standard Lock',
+          lines: const [
+            'Uses Device Admin.',
+            'More secure and simple.',
+            'May require PIN/password after locking.',
           ],
-          selected: {_settings.lockMethod},
-          onSelectionChanged: (s) =>
-              _update(_settings.copyWith(lockMethod: s.first)),
+          selected: !_settings.usesAccessibility,
+          onTap: () => _onSelectMethod(LockSettings.methodDeviceAdmin),
         ),
-        const SizedBox(height: 6),
-        Text(
-          _settings.usesAccessibility
-              ? 'Recommended for Android 9+. Biometric unlock can keep working.'
-              : 'Fallback / legacy. Locking this way may require PIN/password on '
-                  'unlock (biometrics may not appear).',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: _settings.usesAccessibility
-                    ? Theme.of(context).hintColor
-                    : Theme.of(context).colorScheme.error,
-              ),
+        const SizedBox(height: 10),
+        _MethodCard(
+          title: 'Biometric Lock (Experimental)',
+          experimental: true,
+          lines: const [
+            'Uses Accessibility.',
+            'May allow fingerprint/face unlock after locking on some devices.',
+            'Google Play Protect may show a warning.',
+            'Use only if you understand the trade-off.',
+          ],
+          selected: _settings.usesAccessibility,
+          onTap: () => _onSelectMethod(LockSettings.methodAccessibility),
         ),
       ],
+    );
+  }
+
+  /// Switches the lock method. Selecting the experimental Biometric (Accessibility)
+  /// method requires explicit confirmation of the Play Protect trade-off first.
+  Future<void> _onSelectMethod(String method) async {
+    if (method == _settings.lockMethod) return;
+
+    if (method == LockSettings.methodAccessibility) {
+      final confirmed = await _confirmBiometric();
+      if (confirmed != true) return; // keep Standard Lock
+      await _update(_settings.copyWith(lockMethod: method));
+      // Guide the user straight to enabling the service.
+      if (!_accessibilityEnabled) {
+        await LockBridge.openAccessibilitySettings();
+      }
+    } else {
+      await _update(_settings.copyWith(lockMethod: method));
+    }
+  }
+
+  Future<bool?> _confirmBiometric() {
+    final theme = Theme.of(context);
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: Icon(Icons.warning_amber, color: theme.colorScheme.error),
+        title: const Text('Enable Biometric Lock?'),
+        content: const Text(
+          'This experimental method uses an Accessibility service to lock the '
+          'screen so fingerprint/face unlock can keep working on some devices.\n\n'
+          'Google Play Protect may warn about or block APKs that use an '
+          'Accessibility service together with a screen overlay. This is a known '
+          'trade-off, not a malfunction.\n\n'
+          'The service stays privacy-minimal: it never reads screen content and '
+          'only triggers the lock action.\n\n'
+          'Continue only if you understand this.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('I understand, continue'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -202,34 +239,30 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return [
       _PermissionTile(
         title: 'Display over other apps',
-        subtitle: 'Lets the floating button stay visible on top.',
+        subtitle: 'Required for both lock methods so the button stays on top.',
         granted: _overlayGranted,
         actionLabel: 'Grant',
         onAction: LockBridge.openOverlaySettings,
       ),
-      if (_settings.usesAccessibility) ...[
-        const SizedBox(height: 10),
+      const SizedBox(height: 10),
+      // Standard Lock → show Device Admin status; Biometric → show Accessibility.
+      if (_settings.usesAccessibility)
         _PermissionTile(
           title: 'Accessibility service',
-          subtitle: 'Locks the screen without forcing PIN. Privacy-minimal: it '
-              'does not read screen content.',
+          subtitle: 'Privacy-minimal: it does not read screen content and only '
+              'triggers the lock action.',
           granted: _accessibilityEnabled,
           actionLabel: 'Enable',
           onAction: LockBridge.openAccessibilitySettings,
-        ),
-      ],
-      if (_showAdminTile) ...[
-        const SizedBox(height: 10),
+        )
+      else
         _PermissionTile(
-          title: _settings.usesAccessibility
-              ? 'Device admin (fallback)'
-              : 'Device admin (lock screen)',
+          title: 'Device admin (lock screen)',
           subtitle: 'Used only to lock. May require PIN/password on unlock.',
           granted: _adminActive,
           actionLabel: 'Enable',
           onAction: LockBridge.requestAdmin,
         ),
-      ],
     ];
   }
 
@@ -364,6 +397,79 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
+    );
+  }
+}
+
+/// A selectable lock-method option card showing a title and bullet description.
+class _MethodCard extends StatelessWidget {
+  const _MethodCard({
+    required this.title,
+    required this.lines,
+    required this.selected,
+    required this.onTap,
+    this.experimental = false,
+  });
+
+  final String title;
+  final List<String> lines;
+  final bool selected;
+  final bool experimental;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent =
+        experimental ? theme.colorScheme.error : theme.colorScheme.primary;
+    return Card(
+      margin: EdgeInsets.zero,
+      color: selected ? accent.withValues(alpha: 0.10) : null,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: selected ? accent : theme.dividerColor,
+          width: selected ? 2 : 1,
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                selected
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+                color: selected ? accent : theme.hintColor,
+                size: 22,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 4),
+                    ...lines.map(
+                      (l) => Padding(
+                        padding: const EdgeInsets.only(top: 1),
+                        child: Text('•  $l',
+                            style: theme.textTheme.bodySmall),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

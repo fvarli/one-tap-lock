@@ -22,9 +22,9 @@ class LockSettings {
     required this.haptic,
   });
 
-  /// Defaults tuned for OPPO A91 / Android 11: Accessibility lock recommended.
+  /// Default to Standard (Device Admin) lock; Accessibility is opt-in.
   static const LockSettings defaults = LockSettings(
-    lockMethod: methodAccessibility,
+    lockMethod: methodDeviceAdmin,
     tapMode: 'single',
     edge: 'right',
     sizeDp: 46,
@@ -42,9 +42,9 @@ class LockSettings {
     }
 
     return LockSettings(
-      lockMethod: map['lock_method'] == methodDeviceAdmin
-          ? methodDeviceAdmin
-          : methodAccessibility,
+      lockMethod: map['lock_method'] == methodAccessibility
+          ? methodAccessibility
+          : methodDeviceAdmin,
       tapMode: map['tap_mode'] == 'double' ? 'double' : 'single',
       edge: map['edge'] == 'left' ? 'left' : 'right',
       sizeDp: clampInt(map['size_dp'], 36, 60, 46),
