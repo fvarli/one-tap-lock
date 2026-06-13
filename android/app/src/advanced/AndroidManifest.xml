@@ -1,0 +1,19 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- ADVANCED flavor only: privacy-minimal accessibility service that enables
+         GLOBAL_ACTION_LOCK_SCREEN for the experimental Biometric Lock. This entire
+         declaration is absent from the standard APK. -->
+    <application>
+        <service
+            android:name=".LockAccessibilityService"
+            android:exported="true"
+            android:label="@string/accessibility_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_config"/>
+        </service>
+    </application>
+</manifest>

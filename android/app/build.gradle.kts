@@ -30,6 +30,24 @@ android {
         versionName = flutter.versionName
     }
 
+    // Two shippable variants:
+    //  - standard: NO accessibility service (Play-Protect-friendly, default share APK)
+    //  - advanced: keeps the experimental Accessibility "Biometric Lock"
+    // The accessibility code/manifest live only in src/advanced, so the standard
+    // APK contains no AccessibilityService declaration at all.
+    flavorDimensions += "mode"
+    productFlavors {
+        create("standard") {
+            dimension = "mode"
+        }
+        create("advanced") {
+            dimension = "mode"
+            // Distinct package so both APKs can be installed side by side.
+            applicationIdSuffix = ".advanced"
+            versionNameSuffix = "-advanced"
+        }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.

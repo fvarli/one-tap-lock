@@ -7,14 +7,20 @@ void main() {
   const channel = MethodChannel('one_tap_lock/channel');
   final List<MethodCall> calls = [];
 
+  // Simulates the native flavor: false = standard APK, true = advanced APK.
+  bool accessibilitySupported = false;
+
   setUp(() {
     calls.clear();
+    accessibilitySupported = false;
     // Stub the native channel so HomePage's startup load/permission checks
     // resolve to safe defaults instead of throwing in the test environment.
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
       calls.add(call);
       switch (call.method) {
+        case 'isAccessibilitySupported':
+          return accessibilitySupported;
         case 'getSettings':
           // Native default is Standard (Device Admin) lock.
           return <String, Object>{
@@ -42,32 +48,31 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
-  testWidgets('defaults to Standard Lock with Device Admin status shown',
+  testWidgets('standard flavor hides the Biometric Lock option entirely',
       (tester) async {
+    accessibilitySupported = false; // standard APK
     await tester.pumpWidget(const OneTapLockApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('One Tap Lock'), findsOneWidget);
     expect(find.text('Standard Lock'), findsOneWidget);
-    expect(find.text('Biometric Lock (Experimental)'), findsOneWidget);
-    // Standard is selected by default → Device Admin status tile is shown,
-    // Accessibility status is hidden.
-    expect(find.text('Device admin (lock screen)'), findsOneWidget);
+    // No experimental option and no accessibility status in the standard build.
+    expect(find.text('Biometric Lock (Experimental)'), findsNothing);
     expect(find.text('Accessibility service'), findsNothing);
-    expect(calls.any((c) => c.method == 'getSettings'), isTrue);
+    expect(find.text('Device admin (lock screen)'), findsOneWidget);
   });
 
-  testWidgets('selecting Biometric Lock requires confirmation before switching',
+  testWidgets('advanced flavor shows Biometric Lock and gates it behind a warning',
       (tester) async {
+    accessibilitySupported = true; // advanced APK
     await tester.pumpWidget(const OneTapLockApp());
     await tester.pumpAndSettle();
 
-    // Tap the experimental option → a warning dialog must appear.
+    expect(find.text('Biometric Lock (Experimental)'), findsOneWidget);
+
+    // Selecting it must show a warning dialog; cancelling changes nothing.
     await tester.tap(find.text('Biometric Lock (Experimental)'));
     await tester.pumpAndSettle();
     expect(find.text('Enable Biometric Lock?'), findsOneWidget);
-
-    // Cancelling must NOT change the method.
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(calls.any((c) => c.method == 'saveSettings'), isFalse);
@@ -81,7 +86,6 @@ void main() {
     final saved = calls.where((c) => c.method == 'saveSettings').toList();
     expect(saved, isNotEmpty);
     expect((saved.last.arguments as Map)['lock_method'], 'accessibility');
-    // Now Accessibility status tile is shown instead of Device Admin.
     expect(find.text('Accessibility service'), findsOneWidget);
   });
 }

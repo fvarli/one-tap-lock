@@ -13,6 +13,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   LockSettings _settings = LockSettings.defaults;
+  bool _advancedAvailable = false; // true only in the `advanced` flavor
   bool _overlayGranted = false;
   bool _accessibilityEnabled = false;
   bool _adminActive = false;
@@ -46,9 +47,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> _load() async {
     try {
+      _advancedAvailable = await LockBridge.isAccessibilitySupported();
       _settings = await LockBridge.getSettings();
     } catch (_) {
+      _advancedAvailable = false;
       _settings = LockSettings.defaults;
+    }
+    // In the standard flavor accessibility doesn't exist — never run as Biometric.
+    if (!_advancedAvailable && _settings.usesAccessibility) {
+      _settings =
+          _settings.copyWith(lockMethod: LockSettings.methodDeviceAdmin);
+      await LockBridge.saveSettings(_settings);
     }
     await _refreshStatus();
     if (mounted) setState(() => _loading = false);
@@ -169,19 +178,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           selected: !_settings.usesAccessibility,
           onTap: () => _onSelectMethod(LockSettings.methodDeviceAdmin),
         ),
-        const SizedBox(height: 10),
-        _MethodCard(
-          title: 'Biometric Lock (Experimental)',
-          experimental: true,
-          lines: const [
-            'Uses Accessibility.',
-            'May allow fingerprint/face unlock after locking on some devices.',
-            'Google Play Protect may show a warning.',
-            'Use only if you understand the trade-off.',
-          ],
-          selected: _settings.usesAccessibility,
-          onTap: () => _onSelectMethod(LockSettings.methodAccessibility),
-        ),
+        // Biometric Lock exists only in the advanced flavor.
+        if (_advancedAvailable) ...[
+          const SizedBox(height: 10),
+          _MethodCard(
+            title: 'Biometric Lock (Experimental)',
+            experimental: true,
+            lines: const [
+              'Uses Accessibility.',
+              'May allow fingerprint/face unlock after locking on some devices.',
+              'Google Play Protect may show a warning.',
+              'Use only if you understand the trade-off.',
+            ],
+            selected: _settings.usesAccessibility,
+            onTap: () => _onSelectMethod(LockSettings.methodAccessibility),
+          ),
+        ],
       ],
     );
   }

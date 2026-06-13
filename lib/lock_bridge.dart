@@ -16,7 +16,12 @@ class LockBridge {
   static Future<bool> isOverlayGranted() async =>
       await _channel.invokeMethod<bool>('isOverlayGranted') ?? false;
 
-  /// Whether our accessibility service is enabled (preferred lock method).
+  /// Whether the accessibility lock feature is compiled into this build (true
+  /// only in the `advanced` flavor). Standard builds hide Biometric Lock.
+  static Future<bool> isAccessibilitySupported() async =>
+      await _channel.invokeMethod<bool>('isAccessibilitySupported') ?? false;
+
+  /// Whether our accessibility service is enabled (experimental lock method).
   static Future<bool> isAccessibilityEnabled() async =>
       await _channel.invokeMethod<bool>('isAccessibilityEnabled') ?? false;
 

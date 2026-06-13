@@ -6,10 +6,11 @@ import android.os.Build
 import android.view.accessibility.AccessibilityEvent
 
 /**
- * Privacy-minimal accessibility service. It processes no events and reads no
- * window content; its ONLY purpose is to expose performGlobalAction(
- * GLOBAL_ACTION_LOCK_SCREEN) so the floating button can lock the screen without
- * forcing strong authentication (so biometric unlock can keep working).
+ * ADVANCED flavor only. Privacy-minimal accessibility service: it processes no
+ * events and reads no window content; its ONLY purpose is to expose
+ * performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN) so the floating button can lock
+ * the screen without forcing strong authentication (so biometric unlock can keep
+ * working).
  */
 class LockAccessibilityService : AccessibilityService() {
 

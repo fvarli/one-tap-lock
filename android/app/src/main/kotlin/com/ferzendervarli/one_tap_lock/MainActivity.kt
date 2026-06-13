@@ -7,7 +7,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import android.text.TextUtils
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -45,7 +44,8 @@ class MainActivity : FlutterActivity() {
             // --- Permission status ---
             "isOverlayGranted" -> result.success(Settings.canDrawOverlays(this))
             "isAdminActive" -> result.success(dpm.isAdminActive(adminComponent))
-            "isAccessibilityEnabled" -> result.success(isAccessibilityEnabled())
+            "isAccessibilitySupported" -> result.success(AccessibilityLockBridge.isSupported)
+            "isAccessibilityEnabled" -> result.success(AccessibilityLockBridge.isEnabled(this))
             "isServiceRunning" -> result.success(LockOverlayService.isRunning)
 
             // --- Open system settings ---
@@ -113,9 +113,12 @@ class MainActivity : FlutterActivity() {
             result.error("no_overlay", "Overlay permission not granted.", null)
             return
         }
-        // Require the lock mechanism for the selected method to be ready.
-        if (LockPrefs.method(this) == LockPrefs.METHOD_ACCESSIBILITY) {
-            if (!isAccessibilityEnabled()) {
+        // Require the lock mechanism for the selected method to be ready. The
+        // accessibility branch only applies when the flavor actually supports it.
+        val useAccessibility = LockPrefs.method(this) == LockPrefs.METHOD_ACCESSIBILITY &&
+            AccessibilityLockBridge.isSupported
+        if (useAccessibility) {
+            if (!AccessibilityLockBridge.isEnabled(this)) {
                 result.error("no_accessibility", "Enable the accessibility service first.", null)
                 return
             }
@@ -132,21 +135,5 @@ class MainActivity : FlutterActivity() {
             startService(intent)
         }
         result.success(null)
-    }
-
-    /** Reads the secure setting so status is correct regardless of process state. */
-    private fun isAccessibilityEnabled(): Boolean {
-        val expected = ComponentName(this, LockAccessibilityService::class.java)
-        val enabled = Settings.Secure.getString(
-            contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: return false
-        val splitter = TextUtils.SimpleStringSplitter(':')
-        splitter.setString(enabled)
-        while (splitter.hasNext()) {
-            val component = ComponentName.unflattenFromString(splitter.next())
-            if (component == expected) return true
-        }
-        return false
     }
 }

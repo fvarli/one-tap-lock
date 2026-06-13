@@ -204,7 +204,7 @@ class LockOverlayService : Service() {
     }
 
     private fun lockViaAccessibility() {
-        if (LockAccessibilityService.lock()) return
+        if (AccessibilityLockBridge.lock()) return
         // Service disabled or unsupported — fall back to Device Admin if available.
         if (deviceAdminActive()) {
             Toast.makeText(this, "Accessibility off — used Device Admin.", Toast.LENGTH_SHORT).show()
