@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_label">One Tap Lock</string>
+    <string name="accessibility_description">Used only to lock the screen when you tap the floating button. It does not read or inspect screen content.</string>
+</resources>
