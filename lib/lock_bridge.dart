@@ -1,47 +1,59 @@
 import 'package:flutter/services.dart';
 
+import 'lock_settings.dart';
+
 /// Thin, typed wrapper around the single platform [MethodChannel] that connects
-/// the Flutter UI to the native Android code. All screen-lock and overlay logic
-/// lives natively; this class only routes requests and reports permission state.
+/// the Flutter UI to the native Android code. All screen-lock, overlay, and
+/// persistence logic lives natively; this class only routes requests.
 class LockBridge {
   LockBridge._();
 
-  static const MethodChannel _channel =
-      MethodChannel('one_tap_lock/channel');
+  static const MethodChannel _channel = MethodChannel('one_tap_lock/channel');
+
+  // --- Permission status ---
 
   /// Whether SYSTEM_ALERT_WINDOW ("display over other apps") is granted.
-  static Future<bool> isOverlayGranted() async {
-    return await _channel.invokeMethod<bool>('isOverlayGranted') ?? false;
-  }
+  static Future<bool> isOverlayGranted() async =>
+      await _channel.invokeMethod<bool>('isOverlayGranted') ?? false;
 
-  /// Opens the system "display over other apps" settings page for this app.
-  static Future<void> openOverlaySettings() {
-    return _channel.invokeMethod('openOverlaySettings');
-  }
+  /// Whether our accessibility service is enabled (preferred lock method).
+  static Future<bool> isAccessibilityEnabled() async =>
+      await _channel.invokeMethod<bool>('isAccessibilityEnabled') ?? false;
 
-  /// Whether our Device Admin is active (required for lockNow()).
-  static Future<bool> isAdminActive() async {
-    return await _channel.invokeMethod<bool>('isAdminActive') ?? false;
-  }
-
-  /// Launches the system dialog to activate our Device Admin.
-  static Future<void> requestAdmin() {
-    return _channel.invokeMethod('requestAdmin');
-  }
+  /// Whether our Device Admin is active (fallback lock method).
+  static Future<bool> isAdminActive() async =>
+      await _channel.invokeMethod<bool>('isAdminActive') ?? false;
 
   /// Whether the floating-button foreground service is currently running.
-  static Future<bool> isServiceRunning() async {
-    return await _channel.invokeMethod<bool>('isServiceRunning') ?? false;
+  static Future<bool> isServiceRunning() async =>
+      await _channel.invokeMethod<bool>('isServiceRunning') ?? false;
+
+  // --- Open system settings ---
+
+  static Future<void> openOverlaySettings() =>
+      _channel.invokeMethod('openOverlaySettings');
+
+  static Future<void> openAccessibilitySettings() =>
+      _channel.invokeMethod('openAccessibilitySettings');
+
+  static Future<void> requestAdmin() => _channel.invokeMethod('requestAdmin');
+
+  // --- Settings persistence (native SharedPreferences) ---
+
+  static Future<LockSettings> getSettings() async {
+    final map = await _channel.invokeMapMethod<dynamic, dynamic>('getSettings');
+    return map == null ? LockSettings.defaults : LockSettings.fromMap(map);
   }
+
+  /// Persists settings natively and live-refreshes the button if running.
+  static Future<void> saveSettings(LockSettings settings) =>
+      _channel.invokeMethod('saveSettings', settings.toMap());
+
+  // --- Service control ---
 
   /// Starts the floating lock button. Throws a [PlatformException] if a required
-  /// permission is missing (handled by the caller).
-  static Future<void> startService() {
-    return _channel.invokeMethod('startService');
-  }
+  /// permission for the selected lock method is missing.
+  static Future<void> startService() => _channel.invokeMethod('startService');
 
-  /// Stops the floating lock button and removes the overlay.
-  static Future<void> stopService() {
-    return _channel.invokeMethod('stopService');
-  }
+  static Future<void> stopService() => _channel.invokeMethod('stopService');
 }

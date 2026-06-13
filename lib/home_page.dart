@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'lock_bridge.dart';
+import 'lock_settings.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -11,18 +12,30 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
+  LockSettings _settings = LockSettings.defaults;
   bool _overlayGranted = false;
+  bool _accessibilityEnabled = false;
   bool _adminActive = false;
   bool _serviceRunning = false;
   bool _loading = true;
 
-  bool get _ready => _overlayGranted && _adminActive;
+  /// Whether the lock mechanism for the selected method is ready.
+  bool get _lockReady =>
+      _settings.usesAccessibility ? _accessibilityEnabled : _adminActive;
+
+  bool get _ready => _overlayGranted && _lockReady;
+
+  /// Show the Device Admin tile when it is the selected method, or when it is
+  /// needed as a fallback because Accessibility is selected but not enabled.
+  bool get _showAdminTile =>
+      !_settings.usesAccessibility ||
+      (_settings.usesAccessibility && !_accessibilityEnabled);
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _refresh();
+    _load();
   }
 
   @override
@@ -34,26 +47,41 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Re-check permissions when returning from a system settings screen.
-    if (state == AppLifecycleState.resumed) {
-      _refresh();
-    }
+    if (state == AppLifecycleState.resumed) _refreshStatus();
   }
 
-  Future<void> _refresh() async {
+  Future<void> _load() async {
+    try {
+      _settings = await LockBridge.getSettings();
+    } catch (_) {
+      _settings = LockSettings.defaults;
+    }
+    await _refreshStatus();
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _refreshStatus() async {
     try {
       final overlay = await LockBridge.isOverlayGranted();
+      final accessibility = await LockBridge.isAccessibilityEnabled();
       final admin = await LockBridge.isAdminActive();
       final running = await LockBridge.isServiceRunning();
       if (!mounted) return;
       setState(() {
         _overlayGranted = overlay;
+        _accessibilityEnabled = accessibility;
         _adminActive = admin;
         _serviceRunning = running;
-        _loading = false;
       });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _loading = false);
+    } catch (_) {/* keep last known state */}
+  }
+
+  Future<void> _update(LockSettings next) async {
+    setState(() => _settings = next);
+    try {
+      await LockBridge.saveSettings(next);
+    } on PlatformException catch (e) {
+      _snack(e.message ?? 'Could not save settings.');
     }
   }
 
@@ -66,7 +94,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> _toggleService() async {
     if (!_ready) {
-      _snack('Grant both permissions first.');
+      _snack(_settings.usesAccessibility
+          ? 'Grant overlay and enable the accessibility service first.'
+          : 'Grant overlay and enable device admin first.');
       return;
     }
     try {
@@ -78,13 +108,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     } on PlatformException catch (e) {
       _snack(e.message ?? 'Could not change the floating button state.');
     }
-    await _refresh();
+    await _refreshStatus();
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
       appBar: AppBar(title: const Text('One Tap Lock')),
       body: _loading
@@ -94,78 +122,253 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    'A small floating button stays on the right edge of your '
-                    'screen. Tap it to lock the screen — a software replacement '
-                    'for the power button.',
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Two one-time permissions are required:',
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                  ),
+                  _intro(),
+                  const SizedBox(height: 20),
+                  _section('Lock method'),
+                  _lockMethodSelector(),
                   const SizedBox(height: 16),
-                  _PermissionTile(
-                    title: 'Display over other apps',
-                    subtitle: 'Lets the floating button stay visible on top.',
-                    granted: _overlayGranted,
-                    actionLabel: 'Grant overlay',
-                    onAction: () => LockBridge.openOverlaySettings(),
-                  ),
+                  _section('Permissions'),
+                  ..._statusTiles(),
+                  const SizedBox(height: 20),
+                  _section('Floating button'),
+                  ..._behaviorSettings(),
                   const SizedBox(height: 12),
-                  _PermissionTile(
-                    title: 'Device admin (lock screen)',
-                    subtitle:
-                        'Lets the app lock the screen. Only the "lock screen" '
-                        'policy is used.',
-                    granted: _adminActive,
-                    actionLabel: 'Enable admin',
-                    onAction: () => LockBridge.requestAdmin(),
-                  ),
-                  const SizedBox(height: 28),
-                  FilledButton.icon(
-                    onPressed: _ready ? _toggleService : null,
-                    icon: Icon(
-                      _serviceRunning ? Icons.stop_circle : Icons.lock,
-                    ),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    label: Text(
-                      _serviceRunning
-                          ? 'Stop floating button'
-                          : 'Start floating button',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _serviceRunning
-                        ? 'Floating button is active. Drag it vertically; tap to lock.'
-                        : _ready
-                            ? 'Ready. Tap Start to show the floating button.'
-                            : 'Grant both permissions above to enable.',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodySmall,
-                  ),
+                  ..._appearanceSettings(),
                   const SizedBox(height: 24),
-                  Text(
-                    'Tip: set a PIN/pattern lock so the screen locks securely. '
-                    'On ColorOS, allow background activity and auto-launch so the '
-                    'button survives. After a reboot, open this app and tap Start.',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.hintColor),
-                  ),
+                  _startButton(),
                 ],
               ),
             ),
     );
   }
+
+  // --- Sections ----------------------------------------------------------
+
+  Widget _intro() => Text(
+        'A small floating button stays on the chosen screen edge. Tap it to '
+        'lock the screen — a software replacement for the power button.',
+        style: Theme.of(context).textTheme.bodyMedium,
+      );
+
+  Widget _section(String title) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(
+          title,
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.w700),
+        ),
+      );
+
+  Widget _lockMethodSelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(
+              value: LockSettings.methodAccessibility,
+              label: Text('Accessibility'),
+              icon: Icon(Icons.accessibility_new),
+            ),
+            ButtonSegment(
+              value: LockSettings.methodDeviceAdmin,
+              label: Text('Device Admin'),
+              icon: Icon(Icons.admin_panel_settings),
+            ),
+          ],
+          selected: {_settings.lockMethod},
+          onSelectionChanged: (s) =>
+              _update(_settings.copyWith(lockMethod: s.first)),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          _settings.usesAccessibility
+              ? 'Recommended for Android 9+. Biometric unlock can keep working.'
+              : 'Fallback / legacy. Locking this way may require PIN/password on '
+                  'unlock (biometrics may not appear).',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: _settings.usesAccessibility
+                    ? Theme.of(context).hintColor
+                    : Theme.of(context).colorScheme.error,
+              ),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _statusTiles() {
+    return [
+      _PermissionTile(
+        title: 'Display over other apps',
+        subtitle: 'Lets the floating button stay visible on top.',
+        granted: _overlayGranted,
+        actionLabel: 'Grant',
+        onAction: LockBridge.openOverlaySettings,
+      ),
+      if (_settings.usesAccessibility) ...[
+        const SizedBox(height: 10),
+        _PermissionTile(
+          title: 'Accessibility service',
+          subtitle: 'Locks the screen without forcing PIN. Privacy-minimal: it '
+              'does not read screen content.',
+          granted: _accessibilityEnabled,
+          actionLabel: 'Enable',
+          onAction: LockBridge.openAccessibilitySettings,
+        ),
+      ],
+      if (_showAdminTile) ...[
+        const SizedBox(height: 10),
+        _PermissionTile(
+          title: _settings.usesAccessibility
+              ? 'Device admin (fallback)'
+              : 'Device admin (lock screen)',
+          subtitle: 'Used only to lock. May require PIN/password on unlock.',
+          granted: _adminActive,
+          actionLabel: 'Enable',
+          onAction: LockBridge.requestAdmin,
+        ),
+      ],
+    ];
+  }
+
+  List<Widget> _behaviorSettings() {
+    return [
+      _LabeledRow(
+        label: 'Tap mode',
+        child: SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(value: 'single', label: Text('Single')),
+            ButtonSegment(value: 'double', label: Text('Double')),
+          ],
+          selected: {_settings.tapMode},
+          showSelectedIcon: false,
+          onSelectionChanged: (s) =>
+              _update(_settings.copyWith(tapMode: s.first)),
+        ),
+      ),
+      const SizedBox(height: 12),
+      _LabeledRow(
+        label: 'Edge',
+        child: SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(value: 'left', label: Text('Left')),
+            ButtonSegment(value: 'right', label: Text('Right')),
+          ],
+          selected: {_settings.edge},
+          showSelectedIcon: false,
+          onSelectionChanged: (s) => _update(_settings.copyWith(edge: s.first)),
+        ),
+      ),
+      const SizedBox(height: 4),
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Haptic feedback'),
+        subtitle: const Text('Short vibration when locking.'),
+        value: _settings.haptic,
+        onChanged: (v) => _update(_settings.copyWith(haptic: v)),
+      ),
+      Text(
+        'Long-press the button to open this screen.',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).hintColor,
+            ),
+      ),
+    ];
+  }
+
+  List<Widget> _appearanceSettings() {
+    return [
+      _slider(
+        label: 'Size',
+        value: _settings.sizeDp.toDouble(),
+        min: 36,
+        max: 60,
+        suffix: '${_settings.sizeDp}dp',
+        onChanged: (v) =>
+            _update(_settings.copyWith(sizeDp: v.round())),
+      ),
+      _slider(
+        label: 'Opacity',
+        value: _settings.opacity.toDouble(),
+        min: 20,
+        max: 80,
+        suffix: '${_settings.opacity}%',
+        onChanged: (v) =>
+            _update(_settings.copyWith(opacity: v.round())),
+      ),
+      _slider(
+        label: 'Edge margin',
+        value: _settings.marginDp.toDouble(),
+        min: 0,
+        max: 12,
+        suffix: '${_settings.marginDp}dp',
+        onChanged: (v) =>
+            _update(_settings.copyWith(marginDp: v.round())),
+      ),
+    ];
+  }
+
+  Widget _slider({
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required String suffix,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Row(
+      children: [
+        SizedBox(width: 92, child: Text(label)),
+        Expanded(
+          child: Slider(
+            value: value.clamp(min, max),
+            min: min,
+            max: max,
+            divisions: (max - min).round(),
+            label: suffix,
+            onChanged: onChanged,
+          ),
+        ),
+        SizedBox(
+          width: 48,
+          child: Text(suffix, textAlign: TextAlign.end),
+        ),
+      ],
+    );
+  }
+
+  Widget _startButton() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FilledButton.icon(
+          onPressed: _ready ? _toggleService : null,
+          icon: Icon(_serviceRunning ? Icons.stop_circle : Icons.lock),
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+          ),
+          label: Text(
+            _serviceRunning ? 'Stop floating button' : 'Start floating button',
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          _serviceRunning
+              ? 'Active. Drag vertically; tap to lock; long-press to open.'
+              : _ready
+                  ? 'Ready. Tap Start to show the floating button.'
+                  : 'Grant the permissions above to enable.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
+  }
 }
 
-/// A single permission row: status icon, description, and a fix button that is
-/// hidden once the permission is granted.
+/// A permission row: status icon, description, and a fix button hidden once granted.
 class _PermissionTile extends StatelessWidget {
   const _PermissionTile({
     required this.title,
@@ -213,6 +416,25 @@ class _PermissionTile extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A label paired with a control on the right (used for segmented toggles).
+class _LabeledRow extends StatelessWidget {
+  const _LabeledRow({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label),
+        child,
+      ],
     );
   }
 }
